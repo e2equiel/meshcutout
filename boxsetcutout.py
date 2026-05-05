@@ -121,6 +121,63 @@ def validate_args(args: argparse.Namespace) -> None:
         raise meshcutout.MeshCutoutError("--simplify-ratio must be between 0 and 1.")
 
 
+def build_sliding_lid_system(box_min, box_extents, margin, orig_box_top, args):
+    inner_x = box_extents[0] - 2 * margin
+    inner_y = box_extents[1] - 2 * margin
+    
+    t_lid = args.lid_thickness
+    clearance = args.lid_clearance
+    slot_depth = args.lid_slot_depth
+    
+    z_base = orig_box_top + clearance
+    z_top = z_base + t_lid + clearance * 2
+    
+    cutter_parts = []
+    
+    slide_axis = "Y" if inner_y >= inner_x else "X"
+    
+    cx_min = box_min[0] + margin
+    cx_max = box_min[0] + box_extents[0] - margin
+    cy_min = box_min[1] + margin
+    cy_max = box_min[1] + box_extents[1] - margin
+    
+    # Center void
+    center = trimesh.creation.box(extents=[cx_max - cx_min, cy_max - cy_min, 200.0])
+    center.apply_translation([(cx_min + cx_max)/2, (cy_min + cy_max)/2, orig_box_top + 100.0])
+    cutter_parts.append(center)
+    
+    if slide_axis == "Y":
+        groove = trimesh.creation.box(extents=[cx_max - cx_min + 2*slot_depth, cy_max - box_min[1] + 1.0, z_top - z_base])
+        groove.apply_translation([(cx_min + cx_max)/2, (cy_max + box_min[1] - 1.0)/2, (z_top + z_base)/2])
+        cutter_parts.append(groove)
+        
+        entrance = trimesh.creation.box(extents=[cx_max - cx_min, cy_min - box_min[1] + 1.0, 200.0])
+        entrance.apply_translation([(cx_min + cx_max)/2, (cy_min + box_min[1] - 1.0)/2, z_base + 100.0])
+        cutter_parts.append(entrance)
+        
+        lid_width = (cx_max - cx_min) + 2*slot_depth - 2*clearance
+        lid_length = (cy_max - box_min[1]) - clearance
+        lid = trimesh.creation.box(extents=[lid_width, lid_length, t_lid])
+        lid.apply_translation([(cx_min + cx_max)/2, box_min[1] + lid_length/2, z_base + clearance + t_lid/2])
+        
+    else:
+        groove = trimesh.creation.box(extents=[cx_max - box_min[0] + 1.0, cy_max - cy_min + 2*slot_depth, z_top - z_base])
+        groove.apply_translation([(cx_max + box_min[0] - 1.0)/2, (cy_min + cy_max)/2, (z_top + z_base)/2])
+        cutter_parts.append(groove)
+        
+        entrance = trimesh.creation.box(extents=[cx_min - box_min[0] + 1.0, cy_max - cy_min, 200.0])
+        entrance.apply_translation([(cx_min + box_min[0] - 1.0)/2, (cy_min + cy_max)/2, z_base + 100.0])
+        cutter_parts.append(entrance)
+        
+        lid_length = (cx_max - box_min[0]) - clearance
+        lid_width = (cy_max - cy_min) + 2*slot_depth - 2*clearance
+        lid = trimesh.creation.box(extents=[lid_length, lid_width, t_lid])
+        lid.apply_translation([box_min[0] + lid_length/2, (cy_min + cy_max)/2, z_base + clearance + t_lid/2])
+
+    cutter = meshcutout.boolean_union_or_concatenate(cutter_parts, engine=args.boolean_engine, label="Lid cutter")
+    return cutter, lid
+
+
 def resolve_box_bounds(
     cavities: list[trimesh.Trimesh],
     args: argparse.Namespace,
@@ -305,8 +362,18 @@ def build_box_set(args: argparse.Namespace) -> trimesh.Trimesh:
         debug_meshes[f"20_cavity_{index:03d}"] = cavity
 
     box_min, box_extents, minimum_extents = resolve_box_bounds(cavities, args)
+
+    lid_mesh = None
+    lid_cutter = None
+    if getattr(args, "sliding_lid", False):
+        orig_box_top = float(box_min[2] + box_extents[2])
+        extra_z = args.lid_clearance + args.lid_thickness + args.lid_top_lip
+        box_extents[2] += extra_z
+        lid_cutter, lid_mesh = build_sliding_lid_system(box_min, box_extents, args.margin, orig_box_top, args)
+
     box_top = float(box_min[2] + box_extents[2])
-    extension_top = box_top + args.top_overlap
+    # The cavity should only stretch up to the original top if we have a lid
+    extension_top = orig_box_top + args.top_overlap if getattr(args, "sliding_lid", False) else box_top + args.top_overlap
     print(f"Minimum XYZ dimensions: {meshcutout.format_vector(minimum_extents)} mm.")
     print(f"Box XYZ dimensions: {meshcutout.format_vector(box_extents)} mm.")
 
@@ -316,6 +383,10 @@ def build_box_set(args: argparse.Namespace) -> trimesh.Trimesh:
         cutter = extend_cavity_entry_to_top(cavity, extension_top, args, f"cavity {index}")
         cutters.append(cutter)
         debug_meshes[f"21_cutter_{index:03d}"] = cutter
+
+    if lid_cutter is not None:
+        cutters.append(lid_cutter)
+        debug_meshes["21_lid_cutter"] = lid_cutter
 
     debug_meshes["22_box_solid"] = box
     export_debug_meshes(
@@ -330,6 +401,11 @@ def build_box_set(args: argparse.Namespace) -> trimesh.Trimesh:
         result = meshcutout.cleanup_mesh(result)
     if not result.is_volume:
         result = meshcutout.repair_volume_mesh(result, "final box")
+
+    if lid_mesh is not None:
+        lid_mesh.apply_translation([box_extents[0] + args.margin * 2.0, 0, box_min[2] - lid_mesh.bounds[0, 2]])
+        result = meshcutout.boolean_union_or_concatenate([result, lid_mesh], engine=args.boolean_engine, label="box and lid")
+
     if not result.is_volume:
         raise meshcutout.MeshCutoutError("The final box is not a closed volume.")
 
@@ -418,6 +494,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--finger-scoop-depth", type=float, default=12.0)
     parser.add_argument("--finger-scoop-z-depth", type=float, default=10.0)
     parser.add_argument("--finger-scoop-overlap", type=float, default=1.0)
+    parser.add_argument("--sliding-lid", action="store_true")
+    parser.add_argument("--lid-thickness", type=float, default=2.0)
+    parser.add_argument("--lid-clearance", type=float, default=0.2)
+    parser.add_argument("--lid-slot-depth", type=float, default=2.0)
+    parser.add_argument("--lid-top-lip", type=float, default=2.0)
     parser.add_argument("--simplify-faces", type=int, default=None)
     parser.add_argument("--simplify-ratio", type=float, default=0.1)
     parser.add_argument(

@@ -451,6 +451,14 @@ def _build_generation_command(
         command.extend(["--finger-scoop-depth", str(settings.finger_scoop_depth)])
         command.extend(["--finger-scoop-z-depth", str(settings.finger_scoop_z_depth)])
         command.extend(["--finger-scoop-overlap", str(settings.finger_scoop_overlap)])
+
+    if settings.sliding_lid:
+        command.append("--sliding-lid")
+        command.extend(["--lid-thickness", str(settings.lid_thickness)])
+        command.extend(["--lid-clearance", str(settings.lid_clearance)])
+        command.extend(["--lid-slot-depth", str(settings.lid_slot_depth)])
+        command.extend(["--lid-top-lip", str(settings.lid_top_lip)])
+
     if debug_dir is not None:
         command.extend(["--debug-dir", str(debug_dir)])
 
@@ -697,6 +705,39 @@ class MeshCutoutSettings(bpy.types.PropertyGroup):
         description="How far the scoop centerline overlaps the cavity side",
         default=1.0,
         min=0.0,
+        precision=3,
+    )
+    sliding_lid: BoolProperty(
+        name="Sliding Lid",
+        description="Generate a printable box with a sliding lid mechanism along the longest axis",
+        default=False,
+    )
+    lid_thickness: FloatProperty(
+        name="Lid Thickness",
+        description="Thickness of the sliding lid in millimeters",
+        default=2.0,
+        min=0.1,
+        precision=3,
+    )
+    lid_clearance: FloatProperty(
+        name="Lid Clearance",
+        description="Tolerance gap for the lid and grooves in millimeters",
+        default=0.2,
+        min=0.0,
+        precision=3,
+    )
+    lid_slot_depth: FloatProperty(
+        name="Lid Slot Depth",
+        description="How deep the groove cuts into the side walls",
+        default=2.0,
+        min=0.1,
+        precision=3,
+    )
+    lid_top_lip: FloatProperty(
+        name="Lid Top Lip",
+        description="Thickness of the wall holding the lid from the top",
+        default=2.0,
+        min=0.1,
         precision=3,
     )
     entry_clearance_extra: FloatProperty(
@@ -1085,6 +1126,17 @@ class VIEW3D_PT_mesh_cutout(bpy.types.Panel):
                 row.prop(settings, "box_x")
                 row.prop(settings, "box_y")
                 row.prop(settings, "box_z")
+
+            lid = layout.box()
+            lid.label(text="Sliding Lid")
+            lid.prop(settings, "sliding_lid")
+            if settings.sliding_lid:
+                row = lid.row(align=True)
+                row.prop(settings, "lid_thickness", text="Thickness")
+                row.prop(settings, "lid_clearance", text="Clearance")
+                row = lid.row(align=True)
+                row.prop(settings, "lid_slot_depth", text="Slot Depth")
+                row.prop(settings, "lid_top_lip", text="Top Lip")
 
         cavity = layout.box()
         cavity.label(text="Cavity")
