@@ -122,60 +122,116 @@ def validate_args(args: argparse.Namespace) -> None:
 
 
 def build_sliding_lid_system(box_min, box_extents, margin_x, margin_y, orig_box_top, args):
+    t_lid = args.lid_thickness
+    c = args.lid_clearance
+    slot_depth = args.lid_slot_depth
+    t_tab = args.lid_thickness
+    t_lip = args.lid_top_lip
+
+    Z0 = orig_box_top
+    Z1 = Z0 + c
+    Z2 = Z1 + t_tab
+    Z3 = Z2 + c
+    Z4 = Z3 + t_lip
+    Z5 = Z4 + c
+    Z6 = Z5 + t_lid
+
     inner_x = box_extents[0] - 2 * margin_x
     inner_y = box_extents[1] - 2 * margin_y
-    
-    t_lid = args.lid_thickness
-    clearance = args.lid_clearance
-    slot_depth = args.lid_slot_depth
-    
-    z_base = orig_box_top + clearance
-    z_top = z_base + t_lid + clearance * 2
-    
-    cutter_parts = []
-    
     slide_axis = "Y" if inner_y >= inner_x else "X"
+
+    cutter_parts = []
+    lid_parts = []
+
+    X0 = box_min[0]
+    X1 = box_min[0] + margin_x
+    X2 = box_min[0] + box_extents[0] - margin_x
+    X3 = box_min[0] + box_extents[0]
     
-    cx_min = box_min[0] + margin_x
-    cx_max = box_min[0] + box_extents[0] - margin_x
-    cy_min = box_min[1] + margin_y
-    cy_max = box_min[1] + box_extents[1] - margin_y
-    
-    # Center void
-    center = trimesh.creation.box(extents=[cx_max - cx_min, cy_max - cy_min, 200.0])
-    center.apply_translation([(cx_min + cx_max)/2, (cy_min + cy_max)/2, orig_box_top + 100.0])
-    cutter_parts.append(center)
-    
+    Y0 = box_min[1]
+    Y1 = box_min[1] + margin_y
+    Y2 = box_min[1] + box_extents[1] - margin_y
+    Y3 = box_min[1] + box_extents[1]
+
     if slide_axis == "Y":
-        groove = trimesh.creation.box(extents=[cx_max - cx_min + 2*slot_depth, cy_max - box_min[1] + 1.0, z_top - z_base])
-        groove.apply_translation([(cx_min + cx_max)/2, (cy_max + box_min[1] - 1.0)/2, (z_top + z_base)/2])
-        cutter_parts.append(groove)
-        
-        entrance = trimesh.creation.box(extents=[cx_max - cx_min, cy_min - box_min[1] + 1.0, 200.0])
-        entrance.apply_translation([(cx_min + cx_max)/2, (cy_min + box_min[1] - 1.0)/2, z_base + 100.0])
+        # 1. Center void
+        center = trimesh.creation.box(extents=[X2 - X1, Y2 - Y1, Z4 - Z0 + 10.0])
+        center.apply_translation([(X1 + X2)/2, (Y1 + Y2)/2, Z0 + (Z4 - Z0 + 10.0)/2])
+        cutter_parts.append(center)
+
+        # 2. Left Groove
+        l_groove = trimesh.creation.box(extents=[slot_depth, Y2 - Y0 + 2.0, Z3 - Z1])
+        l_groove.apply_translation([X1 - slot_depth/2, (Y0 + Y2)/2, (Z1 + Z3)/2])
+        cutter_parts.append(l_groove)
+
+        # 3. Right Groove
+        r_groove = trimesh.creation.box(extents=[slot_depth, Y2 - Y0 + 2.0, Z3 - Z1])
+        r_groove.apply_translation([X2 + slot_depth/2, (Y0 + Y2)/2, (Z1 + Z3)/2])
+        cutter_parts.append(r_groove)
+
+        # 4. Entrance
+        entrance = trimesh.creation.box(extents=[X3 - X0 + 2.0, Y1 - Y0 + 1.0, Z4 - Z1 + 10.0])
+        entrance.apply_translation([(X0 + X3)/2, Y0 + (Y1 - Y0)/2 - 0.5, Z1 + (Z4 - Z1 + 10.0)/2])
         cutter_parts.append(entrance)
-        
-        lid_width = (cx_max - cx_min) + 2*slot_depth - 2*clearance
-        lid_length = (cy_max - box_min[1]) - clearance
-        lid = trimesh.creation.box(extents=[lid_width, lid_length, t_lid])
-        lid.apply_translation([(cx_min + cx_max)/2, box_min[1] + lid_length/2, z_base + clearance + t_lid/2])
-        
+
+        # LID
+        top_plate = trimesh.creation.box(extents=[X3 - X0, Y3 - Y0, Z6 - Z5])
+        top_plate.apply_translation([(X0 + X3)/2, (Y0 + Y3)/2, (Z5 + Z6)/2])
+        lid_parts.append(top_plate)
+
+        neck = trimesh.creation.box(extents=[X2 - X1 - 2*c, Y2 - Y0 - c, Z5 - Z3])
+        neck.apply_translation([(X1 + X2)/2, Y0 + (Y2 - Y0 - c)/2, (Z3 + Z5)/2])
+        lid_parts.append(neck)
+
+        tabs = trimesh.creation.box(extents=[X2 - X1 + 2*slot_depth - 2*c, Y2 - Y0 - c, Z2 - Z1 - c])
+        tabs.apply_translation([(X1 + X2)/2, Y0 + (Y2 - Y0 - c)/2, Z1 + c + (Z2 - Z1 - c)/2])
+        lid_parts.append(tabs)
+
+        stopper = trimesh.creation.box(extents=[X3 - X0, Y1 - Y0 - c, Z5 - Z1 - c])
+        stopper.apply_translation([(X0 + X3)/2, Y0 + (Y1 - Y0 - c)/2, Z1 + c + (Z5 - Z1 - c)/2])
+        lid_parts.append(stopper)
+
     else:
-        groove = trimesh.creation.box(extents=[cx_max - box_min[0] + 1.0, cy_max - cy_min + 2*slot_depth, z_top - z_base])
-        groove.apply_translation([(cx_max + box_min[0] - 1.0)/2, (cy_min + cy_max)/2, (z_top + z_base)/2])
-        cutter_parts.append(groove)
-        
-        entrance = trimesh.creation.box(extents=[cx_min - box_min[0] + 1.0, cy_max - cy_min, 200.0])
-        entrance.apply_translation([(cx_min + box_min[0] - 1.0)/2, (cy_min + cy_max)/2, z_base + 100.0])
+        # 1. Center void
+        center = trimesh.creation.box(extents=[X2 - X1, Y2 - Y1, Z4 - Z0 + 10.0])
+        center.apply_translation([(X1 + X2)/2, (Y1 + Y2)/2, Z0 + (Z4 - Z0 + 10.0)/2])
+        cutter_parts.append(center)
+
+        # 2. Bottom Groove (Y1)
+        b_groove = trimesh.creation.box(extents=[X2 - X0 + 2.0, slot_depth, Z3 - Z1])
+        b_groove.apply_translation([(X0 + X2)/2, Y1 - slot_depth/2, (Z1 + Z3)/2])
+        cutter_parts.append(b_groove)
+
+        # 3. Top Groove (Y2)
+        t_groove = trimesh.creation.box(extents=[X2 - X0 + 2.0, slot_depth, Z3 - Z1])
+        t_groove.apply_translation([(X0 + X2)/2, Y2 + slot_depth/2, (Z1 + Z3)/2])
+        cutter_parts.append(t_groove)
+
+        # 4. Entrance (-X wall)
+        entrance = trimesh.creation.box(extents=[X1 - X0 + 1.0, Y3 - Y0 + 2.0, Z4 - Z1 + 10.0])
+        entrance.apply_translation([X0 + (X1 - X0)/2 - 0.5, (Y0 + Y3)/2, Z1 + (Z4 - Z1 + 10.0)/2])
         cutter_parts.append(entrance)
-        
-        lid_length = (cx_max - box_min[0]) - clearance
-        lid_width = (cy_max - cy_min) + 2*slot_depth - 2*clearance
-        lid = trimesh.creation.box(extents=[lid_length, lid_width, t_lid])
-        lid.apply_translation([box_min[0] + lid_length/2, (cy_min + cy_max)/2, z_base + clearance + t_lid/2])
+
+        # LID
+        top_plate = trimesh.creation.box(extents=[X3 - X0, Y3 - Y0, Z6 - Z5])
+        top_plate.apply_translation([(X0 + X3)/2, (Y0 + Y3)/2, (Z5 + Z6)/2])
+        lid_parts.append(top_plate)
+
+        neck = trimesh.creation.box(extents=[X2 - X0 - c, Y2 - Y1 - 2*c, Z5 - Z3])
+        neck.apply_translation([X0 + (X2 - X0 - c)/2, (Y1 + Y2)/2, (Z3 + Z5)/2])
+        lid_parts.append(neck)
+
+        tabs = trimesh.creation.box(extents=[X2 - X0 - c, Y2 - Y1 + 2*slot_depth - 2*c, Z2 - Z1 - c])
+        tabs.apply_translation([X0 + (X2 - X0 - c)/2, (Y1 + Y2)/2, Z1 + c + (Z2 - Z1 - c)/2])
+        lid_parts.append(tabs)
+
+        stopper = trimesh.creation.box(extents=[X1 - X0 - c, Y3 - Y0, Z5 - Z1 - c])
+        stopper.apply_translation([X0 + (X1 - X0 - c)/2, (Y0 + Y3)/2, Z1 + c + (Z5 - Z1 - c)/2])
+        lid_parts.append(stopper)
 
     cutter = meshcutout.boolean_union_or_concatenate(cutter_parts, engine=args.boolean_engine, label="Lid cutter")
-    return cutter, lid
+    lid = meshcutout.boolean_union_or_concatenate(lid_parts, engine=args.boolean_engine, label="Lid mesh")
+    return cutter, lid, (Z4 - Z0)
 
 
 def resolve_box_bounds(
@@ -367,8 +423,6 @@ def build_box_set(args: argparse.Namespace) -> trimesh.Trimesh:
     lid_cutter = None
     if getattr(args, "sliding_lid", False):
         orig_box_top = float(box_min[2] + box_extents[2])
-        extra_z = args.lid_clearance + args.lid_thickness + args.lid_top_lip
-        box_extents[2] += extra_z
         
         inner_x = box_extents[0] - 2 * args.margin
         inner_y = box_extents[1] - 2 * args.margin
@@ -385,7 +439,8 @@ def build_box_set(args: argparse.Namespace) -> trimesh.Trimesh:
             margin_x = args.margin
             margin_y = args.margin + args.lid_slot_depth
 
-        lid_cutter, lid_mesh = build_sliding_lid_system(box_min, box_extents, margin_x, margin_y, orig_box_top, args)
+        lid_cutter, lid_mesh, extra_z = build_sliding_lid_system(box_min, box_extents, margin_x, margin_y, orig_box_top, args)
+        box_extents[2] += extra_z
 
     box_top = float(box_min[2] + box_extents[2])
     # The cavity should only stretch up to the original top if we have a lid
