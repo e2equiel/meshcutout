@@ -612,9 +612,11 @@ def build_xyz_entry_cavity(
         "Expanded upper entry cutter: "
         f"clearance {entry_cut_clearance:.3f} mm from z={entry_start_z:.3f}."
     )
-    cavity = trimesh.util.concatenate([base_cavity, top_entry])
-    if not cavity.is_volume:
-        cavity = repair_volume_mesh(cavity, "XYZ-entry cavity")
+    cavity = boolean_union_or_concatenate(
+        [base_cavity, top_entry],
+        engine=args.boolean_engine,
+        label="XYZ-entry cavity",
+    )
     if not cavity.is_volume:
         broken = len(trimesh.repair.broken_faces(cavity))
         raise MeshCutoutError(f"XYZ-entry cavity is not a closed volume. broken_faces={broken}.")
