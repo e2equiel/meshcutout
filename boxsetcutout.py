@@ -121,9 +121,9 @@ def validate_args(args: argparse.Namespace) -> None:
         raise meshcutout.MeshCutoutError("--simplify-ratio must be between 0 and 1.")
 
 
-def build_sliding_lid_system(box_min, box_extents, margin, orig_box_top, args):
-    inner_x = box_extents[0] - 2 * margin
-    inner_y = box_extents[1] - 2 * margin
+def build_sliding_lid_system(box_min, box_extents, margin_x, margin_y, orig_box_top, args):
+    inner_x = box_extents[0] - 2 * margin_x
+    inner_y = box_extents[1] - 2 * margin_y
     
     t_lid = args.lid_thickness
     clearance = args.lid_clearance
@@ -136,10 +136,10 @@ def build_sliding_lid_system(box_min, box_extents, margin, orig_box_top, args):
     
     slide_axis = "Y" if inner_y >= inner_x else "X"
     
-    cx_min = box_min[0] + margin
-    cx_max = box_min[0] + box_extents[0] - margin
-    cy_min = box_min[1] + margin
-    cy_max = box_min[1] + box_extents[1] - margin
+    cx_min = box_min[0] + margin_x
+    cx_max = box_min[0] + box_extents[0] - margin_x
+    cy_min = box_min[1] + margin_y
+    cy_max = box_min[1] + box_extents[1] - margin_y
     
     # Center void
     center = trimesh.creation.box(extents=[cx_max - cx_min, cy_max - cy_min, 200.0])
@@ -369,7 +369,23 @@ def build_box_set(args: argparse.Namespace) -> trimesh.Trimesh:
         orig_box_top = float(box_min[2] + box_extents[2])
         extra_z = args.lid_clearance + args.lid_thickness + args.lid_top_lip
         box_extents[2] += extra_z
-        lid_cutter, lid_mesh = build_sliding_lid_system(box_min, box_extents, args.margin, orig_box_top, args)
+        
+        inner_x = box_extents[0] - 2 * args.margin
+        inner_y = box_extents[1] - 2 * args.margin
+        slide_axis = "Y" if inner_y >= inner_x else "X"
+        
+        if slide_axis == "Y":
+            box_extents[0] += 2 * args.lid_slot_depth
+            box_min[0] -= args.lid_slot_depth
+            margin_x = args.margin + args.lid_slot_depth
+            margin_y = args.margin
+        else:
+            box_extents[1] += 2 * args.lid_slot_depth
+            box_min[1] -= args.lid_slot_depth
+            margin_x = args.margin
+            margin_y = args.margin + args.lid_slot_depth
+
+        lid_cutter, lid_mesh = build_sliding_lid_system(box_min, box_extents, margin_x, margin_y, orig_box_top, args)
 
     box_top = float(box_min[2] + box_extents[2])
     # The cavity should only stretch up to the original top if we have a lid
