@@ -1,0 +1,11 @@
+numpy
+scipy
+shapely
+networkx
+rtree
+trimesh
+manifold3d
+mapbox-earcut
+pymeshlab
+pillow
+scikit-image

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+debug*/
+meshcutout_blender_temp/
+meshcutout_last_run.log
+.DS_Store
+*_cavity.stl
+*_box.stl
